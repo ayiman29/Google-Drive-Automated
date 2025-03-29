@@ -5,75 +5,117 @@ import pickle
 from authenticate import authenticate
 import json
 
+# List of folders and files to ignore
+IGNORED_FOLDERS = {"$Temp", "__MACOSX", ".git"}
+IGNORED_FILES = {".DS_Store", "Thumbs.db"}
+
 # Function to create a folder on Google Drive
-def create_folder(service, folder_name, parent_folder_id=None):
-    # Create a folder metadata object
+def create_folder(service, folder_name, parent_folder_id=None, uploaded_folders=None):
+    if folder_name in uploaded_folders["folders"]:
+        return uploaded_folders["folders"][folder_name]
+
     folder_metadata = {
         'name': folder_name,
         'mimeType': 'application/vnd.google-apps.folder',
         'parents': [parent_folder_id] if parent_folder_id else []
     }
     
-    # Create the folder
     folder = service.files().create(body=folder_metadata, fields='id').execute()
-    return folder['id']
+    folder_id = folder['id']
 
-# Function to upload a file to Google Drive, in the correct folder
-def upload_file(service, file_path, parent_folder_id=None):
+    uploaded_folders["folders"][folder_name] = folder_id
+    save_uploaded_folders(uploaded_folders)
+    
+    print(f"Folder created: {folder_name} - {folder_id}")
+    return folder_id
+
+
+# Function to upload a file to Google Drive
+def upload_file(service, file_path, parent_folder_id=None, uploaded_folders=None):
+    file_name = os.path.basename(file_path)
+
+    # Skip hidden files and ignored system files
+    if file_name in IGNORED_FILES or file_name.startswith('.'):
+        print(f"Skipping hidden/system file: {file_name}")
+        return
+
+    # Skip if file is already uploaded
+    if file_name in uploaded_folders["files"].get(parent_folder_id, {}):
+        print(f"Skipping {file_name}, already uploaded.")
+        return
+
     media = MediaFileUpload(file_path, resumable=True)
     file_metadata = {
-        'name': os.path.basename(file_path),
+        'name': file_name,
         'parents': [parent_folder_id] if parent_folder_id else []
     }
     
     try:
         file = service.files().create(body=file_metadata, media_body=media, fields='id, name').execute()
         print(f"File uploaded: {file['id']} - {file['name']}")
+
+        if parent_folder_id not in uploaded_folders["files"]:
+            uploaded_folders["files"][parent_folder_id] = {}
+        uploaded_folders["files"][parent_folder_id][file_name] = file["id"]
+        save_uploaded_folders(uploaded_folders)
+        
     except Exception as e:
         print(f"Error uploading file {file_path}: {e}")
 
+# Function to load uploaded folders and files
+def load_uploaded_folders():
+    try:
+        with open("uploaded_folders.json", "r") as f:
+            data = json.load(f)
+            if "folders" not in data:
+                data["folders"] = {}
+            if "files" not in data:
+                data["files"] = {}
+            return data
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"folders": {}, "files": {}}
+
+
+# Function to save uploaded folders and files
+def save_uploaded_folders(data):
+    with open("uploaded_folders.json", "w") as f:
+        json.dump(data, f, indent=4)
+    print("Uploaded folders and files saved.")
+
+
 # Function to check local files and create corresponding folders on Google Drive
 def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
+    uploaded_folders = load_uploaded_folders()
+    
     for root, dirs, files in os.walk(local_folder):
-        # Skip any directories that contain '.git'
-        if '.git' in root:
+        if any(ignored in root for ignored in IGNORED_FOLDERS):
+            print(f"Skipping ignored folder: {root}")
             continue
-        
-        # Determine the relative path of the folder (so we can recreate the structure)
+
         relative_folder_path = os.path.relpath(root, local_folder)
-        
-        # Check if the folder already exists on Google Drive, if not create it
+
         folder_id = parent_folder_id
         if relative_folder_path != '.':
-            folder_id = create_folder(drive_service, relative_folder_path, parent_folder_id)
+            folder_id = create_folder(drive_service, relative_folder_path, parent_folder_id, uploaded_folders)
         
-        # Upload files in this folder
         for file_name in files:
             file_path = os.path.join(root, file_name)
-            
-            # Skip unwanted sample files
-            if file_name.lower().endswith('.sample'):
-                print(f"Skipping file: {file_name} (unwanted sample file)")
+
+            if file_name in IGNORED_FILES or file_name.startswith('.'):
+                print(f"Skipping hidden/system file: {file_name}")
                 continue
-            
-            print(f"Uploading file: {file_path}")
-            upload_file(drive_service, file_path, folder_id)
+
+            upload_file(drive_service, file_path, folder_id, uploaded_folders)
+
 
 if __name__ == '__main__':
-    # Authenticate with Google Drive
     drive_service = authenticate()
 
-
-    # Load config.json
     with open("config.json", "r") as f:
         config = json.load(f)
 
-    # The parent folder ID where all the files will be uploaded
-    # If you want to upload everything into a folder like 'BRAC STUDY MATERIALS' in your Drive, you should specify that folder ID
-    root_folder_id = config["root_folder_id"]  # Replace with your folder ID
+    root_folder_id = config["root_folder_id"]
+    local_folder = config["local_folder"]
 
-    # Path to the local folder you want to scan and upload from
-    local_folder = config["local_folder"]  # Change this to your folder path
-
-    # Check and upload files
     check_and_upload_files(local_folder, drive_service, parent_folder_id=root_folder_id)
+
