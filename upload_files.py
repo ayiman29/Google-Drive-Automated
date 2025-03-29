@@ -9,28 +9,42 @@ import json
 IGNORED_FOLDERS = {"$Temp", "__MACOSX", ".git"}
 IGNORED_FILES = {".DS_Store", "Thumbs.db"}
 
-# Function to create a folder on Google Drive
-def create_folder(service, folder_name, parent_folder_id=None, uploaded_folders=None):
-    if folder_name in uploaded_folders["folders"]:
-        return uploaded_folders["folders"][folder_name]
-
+def create_folder(service, folder_name, parent_folder_id, uploaded_folders):
+    """Create a folder on Google Drive and return the folder ID."""
     folder_metadata = {
         'name': folder_name,
         'mimeType': 'application/vnd.google-apps.folder',
         'parents': [parent_folder_id] if parent_folder_id else []
     }
-    
+
     folder = service.files().create(body=folder_metadata, fields='id').execute()
     folder_id = folder['id']
 
     uploaded_folders["folders"][folder_name] = folder_id
     save_uploaded_folders(uploaded_folders)
-    
+
     print(f"Folder created: {folder_name} - {folder_id}")
     return folder_id
 
 
-# Function to upload a file to Google Drive
+def create_folder_recursive(service, folder_path, parent_folder_id, uploaded_folders):
+    """Ensures the entire folder path is created on Google Drive"""
+    parts = folder_path.split(os.sep)  # Split path into individual folders
+    current_parent = parent_folder_id  # Start with root folder
+
+    for i in range(len(parts)):
+        subpath = os.sep.join(parts[: i + 1])  # Build subpath progressively
+
+        if subpath in uploaded_folders["folders"]:  # If folder exists, get its ID
+            current_parent = uploaded_folders["folders"][subpath]
+        else:
+            # Create folder with the correct parent
+            current_parent = create_folder(service, parts[i], current_parent, uploaded_folders)
+            uploaded_folders["folders"][subpath] = current_parent  # Store full path
+
+    return current_parent  # Return the last folder ID
+
+
 def upload_file(service, file_path, parent_folder_id=None, uploaded_folders=None):
     file_name = os.path.basename(file_path)
 
@@ -39,28 +53,51 @@ def upload_file(service, file_path, parent_folder_id=None, uploaded_folders=None
         print(f"Skipping hidden/system file: {file_name}")
         return
 
-    # Skip if file is already uploaded
+    # Check if the file has been uploaded before
     if file_name in uploaded_folders["files"].get(parent_folder_id, {}):
-        print(f"Skipping {file_name}, already uploaded.")
-        return
+        existing_file_id = uploaded_folders["files"][parent_folder_id][file_name]["id"]
+        stored_last_modified = uploaded_folders["files"][parent_folder_id][file_name]["last_modified"]
+        local_last_modified = os.path.getmtime(file_path)
 
+        # If the file hasn't changed (based on timestamp), skip uploading
+        if stored_last_modified >= local_last_modified:
+            print(f"Skipping {file_name}, no changes detected.")
+            return  # No changes, skip upload
+
+        # If the file is modified, delete the old version before uploading the new one
+        try:
+            print(f"Deleting existing file {file_name}...")
+            service.files().delete(fileId=existing_file_id).execute()
+            print(f"Deleted file {file_name} from Google Drive.")
+        except Exception as e:
+            print(f"Error deleting file {file_name}: {e}")
+
+    # Upload the new version of the file
     media = MediaFileUpload(file_path, resumable=True)
     file_metadata = {
         'name': file_name,
         'parents': [parent_folder_id] if parent_folder_id else []
     }
-    
+
     try:
         file = service.files().create(body=file_metadata, media_body=media, fields='id, name').execute()
         print(f"File uploaded: {file['id']} - {file['name']}")
 
+        # Store the file ID and last modified timestamp
         if parent_folder_id not in uploaded_folders["files"]:
             uploaded_folders["files"][parent_folder_id] = {}
-        uploaded_folders["files"][parent_folder_id][file_name] = file["id"]
+
+        uploaded_folders["files"][parent_folder_id][file_name] = {
+            "id": file["id"],
+            "last_modified": os.path.getmtime(file_path)
+        }
+
+        # Save the updated state to the uploaded_folders.json
         save_uploaded_folders(uploaded_folders)
-        
+
     except Exception as e:
         print(f"Error uploading file {file_path}: {e}")
+
 
 # Function to load uploaded folders and files
 def load_uploaded_folders():
@@ -80,13 +117,13 @@ def load_uploaded_folders():
 def save_uploaded_folders(data):
     with open("uploaded_folders.json", "w") as f:
         json.dump(data, f, indent=4)
-    print("Uploaded folders and files saved.")
+
 
 
 # Function to check local files and create corresponding folders on Google Drive
 def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
     uploaded_folders = load_uploaded_folders()
-    
+
     for root, dirs, files in os.walk(local_folder):
         if any(ignored in root for ignored in IGNORED_FOLDERS):
             print(f"Skipping ignored folder: {root}")
@@ -96,8 +133,8 @@ def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
 
         folder_id = parent_folder_id
         if relative_folder_path != '.':
-            folder_id = create_folder(drive_service, relative_folder_path, parent_folder_id, uploaded_folders)
-        
+            folder_id = create_folder_recursive(drive_service, relative_folder_path, parent_folder_id, uploaded_folders)
+
         for file_name in files:
             file_path = os.path.join(root, file_name)
 
@@ -118,4 +155,3 @@ if __name__ == '__main__':
     local_folder = config["local_folder"]
 
     check_and_upload_files(local_folder, drive_service, parent_folder_id=root_folder_id)
-
