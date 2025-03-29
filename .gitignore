@@ -3,3 +3,6 @@ __pycache__
 credentials.json
 token.pickle
 uploaded_folders.json
+*.pyc
+.vscode/
+.idea/
