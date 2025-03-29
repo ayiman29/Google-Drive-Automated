@@ -19,7 +19,7 @@ This project provides a Python-based solution for synchronizing local files and 
 
 This script allows seamless file synchronization between your local machine and Google Drive using Google Drive API. It checks if files already exist in Google Drive and only uploads those that are new or modified. The folder structure from the local directory is preserved in Google Drive. The script also uses OAuth 2.0 authentication for secure access to your Google Drive.
 
-This code was built with the help of ChatGPT, who assisted in guiding through the necessary steps and code structure.
+**This code was built with the help of ChatGPT**, who assisted in guiding through the necessary steps and code structure.
 
 ## Features
 - Synchronizes a local folder to a Google Drive folder.
@@ -145,7 +145,7 @@ This file contains OAuth 2.0 credentials for the application, including client I
 ### `uploaded_folders.json`
 This file is used to track uploaded folders and files. It ensures that the script doesn’t upload the same file multiple times, and it helps to check if a file has been modified locally.
 
-Make sure it's perfectly keeping track of the files. If you change directory, you need to update the folder manually
+Make sure it's perfectly keeping track of the files. If you change directory, you need to update the folder manually.
 
 ## Security Considerations
 
