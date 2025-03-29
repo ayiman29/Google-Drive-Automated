@@ -3,6 +3,7 @@ from googleapiclient.http import MediaFileUpload
 from googleapiclient.discovery import build
 import pickle
 from authenticate import authenticate
+import json
 
 # Function to create a folder on Google Drive
 def create_folder(service, folder_name, parent_folder_id=None):
@@ -62,12 +63,17 @@ if __name__ == '__main__':
     # Authenticate with Google Drive
     drive_service = authenticate()
 
+
+    # Load config.json
+    with open("config.json", "r") as f:
+        config = json.load(f)
+
     # The parent folder ID where all the files will be uploaded
     # If you want to upload everything into a folder like 'BRAC STUDY MATERIALS' in your Drive, you should specify that folder ID
-    root_folder_id = '1PIf-Unyc459000FDMGIWrnvTcY9Rmo7_'  # Replace with your folder ID
+    root_folder_id = config["root_folder_id"]  # Replace with your folder ID
 
     # Path to the local folder you want to scan and upload from
-    local_folder = r"F:\BRAC #STUDY MATERIALS"  # Change this to your folder path
+    local_folder = config["local_folder"]  # Change this to your folder path
 
     # Check and upload files
     check_and_upload_files(local_folder, drive_service, parent_folder_id=root_folder_id)
