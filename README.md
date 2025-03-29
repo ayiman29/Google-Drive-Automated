@@ -134,6 +134,7 @@ Handles OAuth 2.0 authentication for accessing Google Drive. It saves user crede
 This is the main script that performs the file synchronization:
 - It walks through the local directory, creates folders on Google Drive, and uploads files that are new or modified.
 - The script uses the `MediaFileUpload` method from Google API to upload files efficiently.
+- Here, it will go through the uploaded_folders.json to check whether the file has already been uploaded or not. Note that this comparison is happening locally, not from local to google drive.
 
 ### `config.json`
 Contains configuration settings such as the path to the local folder to be synced and the root folder ID on Google Drive where the files will be uploaded.
@@ -143,6 +144,8 @@ This file contains OAuth 2.0 credentials for the application, including client I
 
 ### `uploaded_folders.json`
 This file is used to track uploaded folders and files. It ensures that the script doesn’t upload the same file multiple times, and it helps to check if a file has been modified locally.
+
+Make sure it's perfectly keeping track of the files. If you change directory, you need to update the folder manually
 
 ## Security Considerations
 
