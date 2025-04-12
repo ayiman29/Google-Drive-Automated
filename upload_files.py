@@ -6,7 +6,7 @@ from authenticate import authenticate
 import json
 
 IGNORED_FOLDERS = {"$Temp", "__MACOSX", ".git"}
-IGNORED_FILES = {".DS_Store", "Thumbs.db"}
+IGNORED_FILES = {".DS_Store", "Thumbs.db", "README.md", "readme.md", "LICENSE", "license.txt"}
 
 def create_folder(service, folder_name, parent_folder_id, uploaded_folders):
     """Create a folder on Google Drive and return the folder ID."""
