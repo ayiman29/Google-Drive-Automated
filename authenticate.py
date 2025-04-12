@@ -26,7 +26,6 @@ def authenticate():
         try:
             creds.refresh(Request())
         except RefreshError:
-            print("⚠️  Token expired or revoked. Deleting token and re-authenticating...")
             os.remove(TOKEN_FILE)
             creds = None
 
