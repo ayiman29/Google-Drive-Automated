@@ -10,34 +10,51 @@ IGNORED_FILES = {".DS_Store", "Thumbs.db", "README.md", "readme.md", "LICENSE", 
 
 def create_folder(service, folder_name, parent_folder_id, uploaded_folders):
     """Create a folder on Google Drive and return the folder ID."""
+    
     folder_metadata = {
         'name': folder_name,
         'mimeType': 'application/vnd.google-apps.folder',
         'parents': [parent_folder_id] if parent_folder_id else []
     }
 
-    folder = service.files().create(body=folder_metadata, fields='id').execute()
-    folder_id = folder['id']
+    try:
+        folder = service.files().create(body=folder_metadata, fields='id').execute()
+        folder_id = folder['id']
 
-    uploaded_folders["folders"][folder_name] = folder_id
-    save_uploaded_folders(uploaded_folders)
+        uploaded_folders["folders"][folder_name] = folder_id
+        save_uploaded_folders(uploaded_folders)
 
-    print(f"Folder created: {folder_name} - {folder_id}")
-    return folder_id
+        print(f"Folder created: {folder_name} - {folder_id}")
+        return folder_id
+    except Exception as e:
+        print(f"Error creating folder {folder_name}: {e}")
+        raise
 
 
-def create_folder_recursive(service, folder_path, parent_folder_id, uploaded_folders):
+def create_folder_recursive(service, folder_path, parent_folder_id, uploaded_folders, invalid_folders=None):
+    if invalid_folders is None:
+        invalid_folders = set()
+    
     parts = folder_path.split(os.sep)  
     current_parent = parent_folder_id  
 
     for i in range(len(parts)):
         subpath = os.sep.join(parts[: i + 1])  
 
-        if subpath in uploaded_folders["folders"]:  
-            current_parent = uploaded_folders["folders"][subpath]
+        if subpath in uploaded_folders["folders"]:
+            cached_folder_id = uploaded_folders["folders"][subpath]
+            # Skip validation if we already know it's invalid this session
+            if subpath in invalid_folders:
+                print(f"Cached folder {subpath} ({cached_folder_id}) is invalid. Recreating...")
+                del uploaded_folders["folders"][subpath]
+                current_parent = create_folder(service, parts[i], current_parent, uploaded_folders)
+                uploaded_folders["folders"][subpath] = current_parent
+            else:
+                # Trust the cache, only validate on error
+                current_parent = cached_folder_id
         else:
             current_parent = create_folder(service, parts[i], current_parent, uploaded_folders)
-            uploaded_folders["folders"][subpath] = current_parent  # Store full path
+            uploaded_folders["folders"][subpath] = current_parent 
 
     return current_parent
 
@@ -114,6 +131,7 @@ def save_uploaded_folders(data):
 
 def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
     uploaded_folders = load_uploaded_folders()
+    invalid_folders = set()  # Track invalid folders within this session
 
     for root, dirs, files in os.walk(local_folder):
         if any(ignored in root for ignored in IGNORED_FOLDERS):
@@ -124,7 +142,11 @@ def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
 
         folder_id = parent_folder_id
         if relative_folder_path != '.':
-            folder_id = create_folder_recursive(drive_service, relative_folder_path, parent_folder_id, uploaded_folders)
+            try:
+                folder_id = create_folder_recursive(drive_service, relative_folder_path, parent_folder_id, uploaded_folders, invalid_folders)
+            except Exception as e:
+                print(f"Error creating folder structure for {relative_folder_path}: {e}")
+                continue
 
         for file_name in files:
             file_path = os.path.join(root, file_name)
@@ -133,7 +155,10 @@ def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
                 print(f"Skipping hidden/system file: {file_name}")
                 continue
 
-            upload_file(drive_service, file_path, folder_id, uploaded_folders)
+            try:
+                upload_file(drive_service, file_path, folder_id, uploaded_folders)
+            except Exception as e:
+                print(f"Error uploading {file_name}: {e}")
 
 
 if __name__ == '__main__':
