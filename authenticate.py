@@ -31,7 +31,16 @@ def authenticate():
 
 
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+        try:
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+        except ValueError as e:
+            import json
+            with open(CREDENTIALS_FILE, 'r') as f:
+                client_config = json.load(f)
+            if "installed" not in client_config and "web" not in client_config:
+                flow = InstalledAppFlow.from_client_config({"installed": client_config}, SCOPES)
+            else:
+                raise e
         creds = flow.run_local_server(port=0)
         with open(TOKEN_FILE, 'wb') as token:
             pickle.dump(creds, token)

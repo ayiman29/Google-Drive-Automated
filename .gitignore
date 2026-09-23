@@ -1,4 +1,4 @@
-﻿config.json
+config.json
 __pycache__
 credentials.json
 token.pickle
@@ -6,3 +6,5 @@ uploaded_folders.json
 *.pyc
 .vscode/
 .idea/
+.folderignore
+folderignore

@@ -26,6 +26,7 @@ This script allows seamless file synchronization between your local machine and 
 - Creates folders recursively on Google Drive to match local structure.
 - Uploads only new or modified files, skipping unchanged files.
 - Ignores system files and folders (e.g., `.DS_Store`, `.git`).
+- Supports `.folderignore` to ignore specified folders and subfolders (using exact names or wildcard patterns).
 - OAuth 2.0 authentication for secure access to Google Drive.
 - Stores upload state (folders and files) in a JSON file for efficiency.
 - Ensures only relevant files are uploaded by comparing modification times.
@@ -98,6 +99,15 @@ Before running the script, you must configure your local folder and Google Drive
 
 3. **Create `uploaded_folders.json`**: This file will be generated automatically to keep track of uploaded folders and files, ensuring that only new or modified files are uploaded.
 
+4. **(Optional) Configure `.folderignore`**: Create a `.folderignore` (or `folderignore`) file in the project directory or inside your `local_folder` to skip unwanted folders during synchronization. You can reference `.folderignore.sample` for examples:
+   ```text
+   # Ignore dependencies and build artifacts
+   node_modules
+   venv
+   build
+   temp_*
+   ```
+
 ## How to Use
 
 ### Running the Script
@@ -146,6 +156,9 @@ This file contains OAuth 2.0 credentials for the application, including client I
 This file is used to track uploaded folders and files. It ensures that the script doesn’t upload the same file multiple times, and it helps to check if a file has been modified locally.
 
 Make sure it's perfectly keeping track of the files. If you change directory, you need to update the folder manually.
+
+### `.folderignore`
+This file lists folder names or wildcard patterns (one per line) that should be excluded from synchronization. Lines starting with `#` are treated as comments.
 
 ## Security Considerations
 

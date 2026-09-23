@@ -2,11 +2,123 @@ import os
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.discovery import build
 import pickle
+import json
+import fnmatch
 from authenticate import authenticate
 import json
 
 IGNORED_FOLDERS = {"$Temp", "__MACOSX", ".git"}
 IGNORED_FILES = {".DS_Store", "Thumbs.db", "README.md", "readme.md", "LICENSE", "license.txt"}
+IGNORED_FILES = {
+    ".DS_Store", "Thumbs.db", "README.md", "readme.md", "LICENSE", "license.txt",
+    ".folderignore", "folderignore"
+}
+
+
+DEFAULT_FOLDERIGNORE_TEMPLATE = """# Folder Ignore List
+# Add folder names or patterns to ignore during Google Drive synchronization.
+# One entry per line. Blank lines and lines starting with '#' are ignored.
+
+# Exact folder names
+node_modules
+venv
+.venv
+__pycache__
+build
+dist
+$Temp
+__MACOSX
+
+# Wildcard patterns
+temp_*
+*.tmp
+*cache*
+"""
+
+
+def create_default_folderignore(target_path=".folderignore"):
+    """Create a default .folderignore file if one does not exist."""
+    sample_path = ".folderignore.sample"
+    try:
+        if os.path.isfile(sample_path):
+            with open(sample_path, "r", encoding="utf-8") as src:
+                content = src.read()
+        else:
+            content = DEFAULT_FOLDERIGNORE_TEMPLATE
+        with open(target_path, "w", encoding="utf-8") as dst:
+            dst.write(content)
+        print(f"Created default folder ignore file: {target_path}")
+    except Exception as e:
+        print(f"Warning: could not create default {target_path}: {e}")
+
+
+def load_ignored_folders(local_folder=None, auto_create=True):
+    """
+    Load ignored folder names and patterns from .folderignore or folderignore files.
+    Checks both the current working directory and local_folder (if provided).
+    If no ignore file exists and auto_create is True, creates a default .folderignore.
+    Returns a set of patterns including default IGNORED_FOLDERS.
+    """
+    ignored = set(IGNORED_FOLDERS)
+
+    candidate_paths = [".folderignore", "folderignore"]
+    if local_folder and os.path.isdir(local_folder):
+        candidate_paths.append(os.path.join(local_folder, ".folderignore"))
+        candidate_paths.append(os.path.join(local_folder, "folderignore"))
+
+    # If no ignore file exists, create a default one
+    has_existing = any(os.path.isfile(p) for p in candidate_paths)
+    if not has_existing and auto_create:
+        create_default_folderignore(".folderignore")
+
+    seen_files = set()
+    for file_path in candidate_paths:
+        abs_path = os.path.abspath(file_path)
+        if abs_path in seen_files:
+            continue
+        seen_files.add(abs_path)
+
+        if os.path.isfile(abs_path):
+            try:
+                with open(abs_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        line = line.rstrip("/\\")
+                        if line:
+                            ignored.add(line)
+            except Exception as e:
+                print(f"Warning: could not read ignore file {abs_path}: {e}")
+
+    return ignored
+
+
+def is_folder_ignored(folder_name, relative_folder_path="", ignored_patterns=None):
+    """Check if a folder name or relative path matches any pattern in ignored_patterns."""
+    if ignored_patterns is None:
+        ignored_patterns = IGNORED_FOLDERS
+
+    norm_rel = relative_folder_path.replace("\\", "/").strip("/") if relative_folder_path else ""
+    parts = norm_rel.split("/") if norm_rel and norm_rel != "." else []
+
+    for pattern in ignored_patterns:
+        norm_pattern = pattern.replace("\\", "/").strip("/")
+
+        # Direct name match or glob pattern match
+        if folder_name == norm_pattern or fnmatch.fnmatch(folder_name, norm_pattern):
+            return True
+
+        # Full relative path match
+        if norm_rel and (norm_rel == norm_pattern or fnmatch.fnmatch(norm_rel, norm_pattern)):
+            return True
+
+        # Any path component match
+        for part in parts:
+            if part == norm_pattern or fnmatch.fnmatch(part, norm_pattern):
+                return True
+
+    return False
 
 def create_folder(service, folder_name, parent_folder_id, uploaded_folders):
     """Create a folder on Google Drive and return the folder ID."""
@@ -114,13 +226,24 @@ def save_uploaded_folders(data):
 
 def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
     uploaded_folders = load_uploaded_folders()
+    ignored_folders = load_ignored_folders(local_folder)
 
     for root, dirs, files in os.walk(local_folder):
-        if any(ignored in root for ignored in IGNORED_FOLDERS):
+        relative_folder_path = os.path.relpath(root, local_folder)
+
+        if relative_folder_path != '.' and is_folder_ignored(os.path.basename(root), relative_folder_path, ignored_folders):
             print(f"Skipping ignored folder: {root}")
+            dirs[:] = []
             continue
 
-        relative_folder_path = os.path.relpath(root, local_folder)
+        kept_dirs = []
+        for d in dirs:
+            dir_rel_path = os.path.relpath(os.path.join(root, d), local_folder)
+            if is_folder_ignored(d, dir_rel_path, ignored_folders):
+                print(f"Skipping ignored folder: {os.path.join(root, d)}")
+            else:
+                kept_dirs.append(d)
+        dirs[:] = kept_dirs
 
         folder_id = parent_folder_id
         if relative_folder_path != '.':

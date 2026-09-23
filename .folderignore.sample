@@ -1,0 +1,19 @@
+# Folder Ignore List
+# Add folder names or patterns to ignore during Google Drive synchronization.
+# One entry per line. Blank lines and lines starting with '#' are ignored.
+
+# Exact folder names
+node_modules
+venv
+.venv
+__pycache__
+build
+dist
+$Temp
+__MACOSX
+
+# Wildcard patterns
+temp_*
+*.tmp
+*cache*
+
