@@ -244,6 +244,7 @@ def save_uploaded_folders(data):
 def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
     uploaded_folders = load_uploaded_folders()
     ignored_folders = load_ignored_folders(local_folder)
+    invalid_folders = set()
 
     for root, dirs, files in os.walk(local_folder):
         relative_folder_path = os.path.relpath(root, local_folder)
