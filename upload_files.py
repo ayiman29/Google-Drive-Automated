@@ -171,8 +171,9 @@ def create_folder_recursive(service, folder_path, parent_folder_id, uploaded_fol
     return current_parent
 
 
-def upload_file(service, file_path, parent_folder_id=None, uploaded_folders=None):
+def upload_file(service, file_path, parent_folder_id=None, uploaded_folders=None, stats=None):
     file_name = os.path.basename(file_path)
+    is_update = False
 
 
     if file_name in IGNORED_FILES or file_name.startswith('.'):
@@ -190,6 +191,7 @@ def upload_file(service, file_path, parent_folder_id=None, uploaded_folders=None
             print(f"Skipping {file_name}, no changes detected.")
             return  
 
+        is_update = True
 
         try:
             print(f"Deleting existing file {file_name}...")
@@ -215,8 +217,9 @@ def upload_file(service, file_path, parent_folder_id=None, uploaded_folders=None
             "id": file["id"],
             "last_modified": os.path.getmtime(file_path)
         }
-
         save_uploaded_folders(uploaded_folders)
+        if stats is not None:
+            stats["updated" if is_update else "uploaded"] += 1
 
     except Exception as e:
         print(f"Error uploading file {file_path}: {e}")
@@ -240,11 +243,61 @@ def save_uploaded_folders(data):
         json.dump(data, f, indent=4)
 
 
+def delete_removed_files(
+    drive_service,
+    uploaded_folders,
+    seen_files,
+    ignored_folders,
+    stats=None,
+):
+    """Delete tracked Drive files that no longer exist in the local folder."""
+    ignored_parent_ids = set()
+    for folder_path, folder_id in uploaded_folders["folders"].items():
+        if is_folder_ignored(
+            os.path.basename(folder_path),
+            folder_path,
+            ignored_folders,
+        ):
+            ignored_parent_ids.add(folder_id)
+
+    for parent_folder_id, files in list(uploaded_folders["files"].items()):
+        for file_name, file_info in list(files.items()):
+            file_key = (parent_folder_id, file_name)
+
+            if (
+                file_key in seen_files
+                or parent_folder_id in ignored_parent_ids
+                or file_name in IGNORED_FILES
+                or file_name.startswith(".")
+            ):
+                continue
+
+            try:
+                print(f"Deleting removed file {file_name} from Google Drive...")
+                drive_service.files().delete(fileId=file_info["id"]).execute()
+                del files[file_name]
+                if stats is not None:
+                    stats["deleted"] += 1
+                print(f"Deleted removed file {file_name} from Google Drive.")
+            except Exception as e:
+                print(f"Error deleting removed file {file_name}: {e}")
+
+        if not files:
+            del uploaded_folders["files"][parent_folder_id]
+
+    save_uploaded_folders(uploaded_folders)
+
+
 
 def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
+    if not os.path.isdir(local_folder):
+        raise FileNotFoundError(f"Local folder does not exist: {local_folder}")
+
     uploaded_folders = load_uploaded_folders()
     ignored_folders = load_ignored_folders(local_folder)
     invalid_folders = set()
+    seen_files = set()
+    stats = {"uploaded": 0, "updated": 0, "deleted": 0}
 
     for root, dirs, files in os.walk(local_folder):
         relative_folder_path = os.path.relpath(root, local_folder)
@@ -279,9 +332,30 @@ def check_and_upload_files(local_folder, drive_service, parent_folder_id=None):
                 continue
 
             try:
-                upload_file(drive_service, file_path, folder_id, uploaded_folders)
+                upload_file(
+                    drive_service,
+                    file_path,
+                    folder_id,
+                    uploaded_folders,
+                    stats,
+                )
+                seen_files.add((folder_id, file_name))
             except Exception as e:
                 print(f"Error uploading {file_name}: {e}")
+
+    delete_removed_files(
+        drive_service,
+        uploaded_folders,
+        seen_files,
+        ignored_folders,
+        stats,
+    )
+    print(
+        "\nSync complete: "
+        f"{stats['uploaded']} uploaded, "
+        f"{stats['updated']} updated, "
+        f"{stats['deleted']} deleted."
+    )
 
 
 if __name__ == '__main__':

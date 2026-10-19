@@ -25,6 +25,7 @@ This script allows seamless file synchronization between your local machine and 
 - Synchronizes a local folder to a Google Drive folder.
 - Creates folders recursively on Google Drive to match local structure.
 - Uploads only new or modified files, skipping unchanged files.
+- Deletes previously uploaded files from Google Drive when they are deleted locally.
 - Ignores system files and folders (e.g., `.DS_Store`, `.git`).
 - Supports `.folderignore` to ignore specified folders and subfolders (using exact names or wildcard patterns).
 - OAuth 2.0 authentication for secure access to Google Drive.
@@ -122,6 +123,17 @@ Before running the script, you must configure your local folder and Google Drive
 2. **File Upload**:
    Once authenticated, the script will scan your local folder (specified in `config.json`), create corresponding folders on Google Drive, and upload any missing or modified files.
 
+   Files that were previously uploaded by the script and have since been deleted locally are also deleted from Google Drive during this scan. Only files tracked in `uploaded_folders.json` are eligible for automatic deletion.
+
+   At the end of the scan, a summary is printed, for example:
+   ```
+   Sync complete: 3 uploaded, 1 updated, 2 deleted.
+   ```
+
+### Rename Limitation
+
+Renaming a file locally is currently treated as deleting the old file and creating a new file. The script matches tracked files by their filename and parent folder, so it cannot yet determine that two files with different names contain the same content. As a result, the old file is deleted from Google Drive and the renamed file is uploaded as a new Drive file. Rename detection is not currently implemented.
+
 3. **Folder Structure**:
    The folder structure of your local directory will be mirrored on Google Drive, ensuring that the same folder hierarchy is maintained.
 
@@ -145,6 +157,7 @@ This is the main script that performs the file synchronization:
 - It walks through the local directory, creates folders on Google Drive, and uploads files that are new or modified.
 - The script uses the `MediaFileUpload` method from Google API to upload files efficiently.
 - Here, it will go through the uploaded_folders.json to check whether the file has already been uploaded or not. Note that this comparison is happening locally, not from local to google drive.
+- At the end of each scan, it compares tracked files with the files found locally and deletes tracked files that are missing locally. Files in ignored folders and hidden/system files are protected.
 
 ### `config.json`
 Contains configuration settings such as the path to the local folder to be synced and the root folder ID on Google Drive where the files will be uploaded.
@@ -173,4 +186,3 @@ This file lists folder names or wildcard patterns (one per line) that should be 
 ## Acknowledgements
 
 This project was built with the assistance of **ChatGPT**, which helped in the design, structure, and implementation of key parts of the code. ChatGPT provided guidance on setting up OAuth 2.0 authentication, organizing the file structure, and addressing common issues in file syncing with Google Drive.
-
